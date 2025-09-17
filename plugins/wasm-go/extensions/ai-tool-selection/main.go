@@ -67,7 +67,6 @@ type EnableConditionsConfig struct {
 }
 
 // TriggerConditionsConfig holds the logic for triggering query rewriting.
-// [!change] Simplified struct
 type TriggerConditionsConfig struct {
 	MessageCountThreshold int // When the number of dialogue rounds exceeds this threshold, query rewriting is triggered. 0 or a negative number disables it.
 }
@@ -191,7 +190,6 @@ func parseConfig(json gjson.Result, config *PluginConfig) error {
 			Port: rewriteServicePort,
 		})
 
-		// [!change] Parse simplified trigger conditions
 		triggerJSON := rewriteJSON.Get("triggerConditions")
 		config.QueryRewriting.TriggerConditions.MessageCountThreshold = int(triggerJSON.Get("messageCountThreshold").Int())
 
@@ -258,7 +256,6 @@ func extractOriginalQuery(messages []gjson.Result) string {
 	return ""
 }
 
-// [!change] Rewritten to match simplified trigger logic
 // shouldTriggerRewrite checks if the conditions for query rewriting are met.
 func shouldTriggerRewrite(bodyJSON gjson.Result, triggers TriggerConditionsConfig) bool {
 	// If the threshold is 0 or negative, this trigger condition is disabled.
