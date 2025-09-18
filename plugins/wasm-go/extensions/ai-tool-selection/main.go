@@ -35,6 +35,7 @@ func init() {
 	wrapper.SetCtx(
 		"ai-tool-selection",
 		wrapper.ParseConfig(parseConfig),
+		wrapper.ProcessRequestHeaders(onHttpRequestHeaders),
 		wrapper.ProcessRequestBody(onHttpRequestBody),
 	)
 }
@@ -200,6 +201,19 @@ func parseConfig(json gjson.Result, config *PluginConfig) error {
 	}
 
 	return nil
+}
+
+// onHttpRequestHeaders handles the request headers phase.
+// Returns HeaderStopIteration to pause header processing and allow body processing to modify headers.
+func onHttpRequestHeaders(ctx wrapper.HttpContext, config PluginConfig) types.Action {
+	// Check if the feature is globally disabled
+	if !config.Enabled {
+		return types.ActionContinue
+	}
+
+	// Return HeaderStopIteration to pause the request headers processing
+	// This allows us to modify headers in the body processing phase
+	return types.HeaderStopIteration
 }
 
 // onHttpRequestBody is the main entry point for processing requests.
@@ -560,6 +574,8 @@ func startToolReranking(ctx wrapper.HttpContext, config PluginConfig, query stri
 			// Replace the original request body and continue the request flow.
 			log.Debugf("Replaced request body size: %d", len(newBody))
 			proxywasm.ReplaceHttpRequestBody(newBody)
+			// Remove content-length header since we modified the body
+			proxywasm.RemoveHttpRequestHeader("content-length")
 			log.Infof("Tool reranking successful. Selected %d tools out of %d.", len(selectedTools), len(tools))
 			proxywasm.ResumeHttpRequest()
 		}, timeout)
@@ -587,6 +603,8 @@ func handleRerankFailure(ctx wrapper.HttpContext, config PluginConfig) types.Act
 	log.Warn("Tool reranking failed, skipping and using original tool list.")
 	originalBody := ctx.GetContext("originalBody").([]byte)
 	proxywasm.ReplaceHttpRequestBody(originalBody)
+	// Remove content-length header since we might have modified the body
+	proxywasm.RemoveHttpRequestHeader("content-length")
 	proxywasm.ResumeHttpRequest()
 	return types.ActionPause // This pause will be lifted since ResumeHttpRequest has been called.
 }
