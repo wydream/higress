@@ -1034,13 +1034,9 @@ func (v *vertexProvider) buildVertexChatRequest(request *chatCompletionRequest) 
 		return nil, err
 	}
 	if request.Tools != nil {
-		functions := make([]function, 0, len(request.Tools))
-		for _, tool := range request.Tools {
-			functions = append(functions, tool.Function)
-		}
 		vertexRequest.Tools = []vertexTool{
 			{
-				FunctionDeclarations: functions,
+				FunctionDeclarations: buildVertexFunctionDeclarations(request.Tools),
 			},
 		}
 	}
@@ -1119,6 +1115,18 @@ func (v *vertexProvider) buildVertexChatRequest(request *chatCompletionRequest) 
 	}
 
 	return &vertexRequest, nil
+}
+
+func buildVertexFunctionDeclarations(tools []tool) []vertexFunctionDeclaration {
+	functionDeclarations := make([]vertexFunctionDeclaration, 0, len(tools))
+	for _, tool := range tools {
+		functionDeclarations = append(functionDeclarations, vertexFunctionDeclaration{
+			Name:                 tool.Function.Name,
+			Description:          tool.Function.Description,
+			ParametersJsonSchema: tool.Function.Parameters,
+		})
+	}
+	return functionDeclarations
 }
 
 // applyResponseFormatToGenerationConfig maps OpenAI response_format into Vertex generationConfig.
@@ -1311,7 +1319,13 @@ type vertexSystemInstruction struct {
 }
 
 type vertexTool struct {
-	FunctionDeclarations any `json:"functionDeclarations"`
+	FunctionDeclarations []vertexFunctionDeclaration `json:"functionDeclarations"`
+}
+
+type vertexFunctionDeclaration struct {
+	Name                 string                 `json:"name"`
+	Description          string                 `json:"description,omitempty"`
+	ParametersJsonSchema map[string]interface{} `json:"parametersJsonSchema,omitempty"`
 }
 
 type vertexChatSafetySetting struct {

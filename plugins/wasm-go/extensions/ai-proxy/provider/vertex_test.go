@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/alibaba/higress/plugins/wasm-go/extensions/ai-proxy/util"
@@ -42,6 +43,101 @@ func TestAppendOrReplaceAPIKey(t *testing.T) {
 		result := appendOrReplaceAPIKey("not-a-valid-uri?foo=bar", "my-key")
 		assert.Equal(t, "not-a-valid-uri?foo=bar&key=my-key", result)
 	})
+}
+
+func TestBuildVertexFunctionDeclarations(t *testing.T) {
+	schema := map[string]interface{}{
+		"type":    "object",
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"properties": map[string]interface{}{
+			"city": map[string]interface{}{
+				"type":        "string",
+				"description": "city name",
+			},
+		},
+		"required": []interface{}{"city"},
+	}
+
+	declarations := buildVertexFunctionDeclarations([]tool{
+		{
+			Type: "function",
+			Function: function{
+				Name:        "demo_tool",
+				Description: "demo",
+				Parameters:  schema,
+			},
+		},
+		{
+			Type: "function",
+			Function: function{
+				Name: "no_params",
+			},
+		},
+	})
+
+	require.Len(t, declarations, 2)
+	assert.Equal(t, "demo_tool", declarations[0].Name)
+	assert.Equal(t, "demo", declarations[0].Description)
+	assert.Equal(t, schema, declarations[0].ParametersJsonSchema)
+	assert.Equal(t, "no_params", declarations[1].Name)
+	assert.Empty(t, declarations[1].Description)
+	assert.Nil(t, declarations[1].ParametersJsonSchema)
+
+	body, err := json.Marshal(vertexTool{FunctionDeclarations: declarations[:1]})
+	require.NoError(t, err)
+	bodyString := string(body)
+	assert.Contains(t, bodyString, `"parametersJsonSchema"`)
+	assert.Contains(t, bodyString, `"$schema"`)
+	assert.NotContains(t, bodyString, `"parameters":`)
+}
+
+func TestVertexProviderBuildChatRequestToolParametersUseParametersJsonSchema(t *testing.T) {
+	v := &vertexProvider{}
+	schema := map[string]interface{}{
+		"type":    "object",
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"properties": map[string]interface{}{
+			"city": map[string]interface{}{
+				"type":        "string",
+				"description": "city name",
+			},
+		},
+		"required": []interface{}{"city"},
+	}
+	req := &chatCompletionRequest{
+		Model: "gemini-2.5-flash",
+		Messages: []chatMessage{
+			{Role: roleUser, Content: "test tools"},
+		},
+		Tools: []tool{
+			{
+				Type: "function",
+				Function: function{
+					Name:        "demo_tool",
+					Description: "demo",
+					Parameters:  schema,
+				},
+			},
+		},
+	}
+
+	vertexReq, err := v.buildVertexChatRequest(req)
+	require.NoError(t, err)
+	require.NotNil(t, vertexReq)
+	require.Len(t, vertexReq.Tools, 1)
+	require.Len(t, vertexReq.Tools[0].FunctionDeclarations, 1)
+	declaration := vertexReq.Tools[0].FunctionDeclarations[0]
+	assert.Equal(t, "demo_tool", declaration.Name)
+	assert.Equal(t, "demo", declaration.Description)
+	assert.Equal(t, schema, declaration.ParametersJsonSchema)
+
+	body, err := json.Marshal(vertexReq)
+	require.NoError(t, err)
+	bodyString := string(body)
+	assert.Contains(t, bodyString, `"functionDeclarations"`)
+	assert.Contains(t, bodyString, `"parametersJsonSchema"`)
+	assert.Contains(t, bodyString, `"$schema"`)
+	assert.NotContains(t, bodyString, `"parameters":`)
 }
 
 func TestVertexProviderBuildChatRequestStructuredOutputMapping(t *testing.T) {
